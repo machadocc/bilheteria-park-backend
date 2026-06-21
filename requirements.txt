@@ -6,3 +6,4 @@ python-dotenv>=1.0
 boto3>=1.30.0
 prometheus-client>=0.16.0
 psycopg2-binary>=2.9.0
+python-jose>=3.3.0
