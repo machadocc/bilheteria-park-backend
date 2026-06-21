@@ -10,7 +10,6 @@ from sqlalchemy import (
     Time,
     Float,
     DateTime,
-    Boolean,
     ForeignKey,
     Enum as SQLEnum,
 )
@@ -88,6 +87,7 @@ class Sale(Base):
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     total_amount = Column(Float, nullable=False, default=0.0)
+    purchase_code = Column(String(64), nullable=False, unique=True, index=True)
     payment_method = Column(String(80), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 

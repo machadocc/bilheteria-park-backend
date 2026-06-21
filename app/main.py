@@ -1,8 +1,11 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from .api import batches, customers, dashboard, events, sales
+from .api import admin, auth, events, sales
 from .database import init_db
+from .middleware import AdminAuthMiddleware
 from .observability import setup_logging, setup_metrics
+from .config import IPS_VALIDS, ENVIRONMENT
 
 app = FastAPI(
     title="Bilheteria Park API",
@@ -10,11 +13,23 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.include_router(events.router)
-app.include_router(batches.router)
-app.include_router(customers.router)
-app.include_router(sales.router)
-app.include_router(dashboard.router)
+app.add_middleware(AdminAuthMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if ENVIRONMENT == "development" else IPS_VALIDS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Rotas públicas
+app.include_router(auth.router)       # POST /auth/login
+app.include_router(events.router)     # GET  /eventos/, GET /eventos/{id}
+app.include_router(sales.router)      # POST /compras
+
+# Rotas de admin (todas protegidas por JWT via AdminAuthMiddleware)
+app.include_router(admin.router)      # /admin/*
 
 setup_logging()
 setup_metrics(app)

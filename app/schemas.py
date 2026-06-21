@@ -37,7 +37,7 @@ class EventUpdate(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
     date: Optional[date] = None
-    time: Optional[str] = None
+    time: Optional[time] = None
     location: Optional[str] = None
     capacity: Optional[int] = None
     banner_url: Optional[str] = None
@@ -48,16 +48,6 @@ class EventHistoryOut(BaseModel):
     action: str
     notes: Optional[str] = None
     created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class EventOut(EventBase):
-    id: int
-    created_at: datetime
-    updated_at: datetime
-    history: List[EventHistoryOut] = []
 
     class Config:
         from_attributes = True
@@ -89,6 +79,33 @@ class TicketBatchOut(TicketBatchBase):
     id: int
     status: BatchStatus
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EventCatalogOut(BaseModel):
+    id: int
+    name: str
+    date: date
+    time: time
+    location: Optional[str] = None
+    banner_url: Optional[str] = None
+    min_price: float
+    available_tickets: int
+    status: EventStatus
+    category: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class EventOut(EventBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    ticket_batches: List[TicketBatchOut] = []
+    history: List[EventHistoryOut] = []
 
     class Config:
         from_attributes = True
@@ -133,6 +150,14 @@ class SaleCreate(BaseModel):
     items: List[SaleItemCreate]
 
 
+class PurchaseCreate(BaseModel):
+    evento_id: int
+    quantidade: int = Field(..., gt=0)
+    nome_comprador: constr(strip_whitespace=True, min_length=3)
+    email_comprador: constr(strip_whitespace=True, min_length=5)
+    cpf_comprador: constr(strip_whitespace=True, min_length=11, max_length=14)
+
+
 class SaleItemOut(BaseModel):
     ticket_batch_id: int
     quantity: int
@@ -146,9 +171,31 @@ class SaleOut(BaseModel):
     id: int
     customer_id: Optional[int]
     total_amount: float
+    purchase_code: str
     payment_method: Optional[str]
     created_at: datetime
-    items: List[SaleItemOut]
+    items: List[SaleItemOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+class AuthLogin(BaseModel):
+    username: str
+    password: str
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class AdminSaleReportOut(BaseModel):
+    event_id: int
+    name: str
+    tickets_sold: int
+    revenue: float
+    capacity: int
 
     class Config:
         from_attributes = True
