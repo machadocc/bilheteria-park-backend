@@ -1,5 +1,6 @@
 from datetime import datetime, date
 from typing import List, Optional
+import uuid
 
 from sqlalchemy import func, extract, desc
 from sqlalchemy.orm import Session
@@ -21,6 +22,39 @@ def get_event(db: Session, event_id: int) -> Optional[models.Event]:
 
 def list_events(db: Session) -> List[models.Event]:
     return db.query(models.Event).order_by(models.Event.date.asc(), models.Event.time.asc()).all()
+
+
+def list_public_events(db: Session) -> List[dict]:
+    events = (
+        db.query(models.Event)
+        .filter(models.Event.status == models.EventStatus.ACTIVE)
+        .order_by(models.Event.date.asc(), models.Event.time.asc())
+        .all()
+    )
+    response = []
+    for event in events:
+        active_batches = [
+            batch
+            for batch in event.ticket_batches
+            if batch.status == models.BatchStatus.ACTIVE and batch.quantity_available > 0
+        ]
+        available_tickets = sum(batch.quantity_available for batch in active_batches)
+        min_price = min((batch.unit_price for batch in active_batches), default=0.0)
+        response.append(
+            {
+                "id": event.id,
+                "name": event.name,
+                "date": event.date,
+                "time": event.time,
+                "location": event.location,
+                "banner_url": event.banner_url,
+                "min_price": float(min_price),
+                "available_tickets": int(available_tickets),
+                "status": event.status,
+                "category": event.category,
+            }
+        )
+    return response
 
 
 def create_event(db: Session, event_in: schemas.EventCreate) -> models.Event:
@@ -158,6 +192,90 @@ def get_customer(db: Session, customer_id: int) -> Optional[models.Customer]:
     return db.query(models.Customer).filter(models.Customer.id == customer_id).first()
 
 
+def get_customer_by_cpf(db: Session, cpf: str) -> Optional[models.Customer]:
+    return db.query(models.Customer).filter(models.Customer.cpf == cpf).first()
+
+
+def get_or_create_customer(db: Session, name: str, cpf: str, email: str) -> models.Customer:
+    customer = get_customer_by_cpf(db, cpf)
+    if customer:
+        return customer
+    new_customer = models.Customer(name=name, cpf=cpf, email=email)
+    db.add(new_customer)
+    db.commit()
+    db.refresh(new_customer)
+    return new_customer
+
+
+def generate_purchase_code() -> str:
+    return uuid.uuid4().hex.upper()[:12]
+
+
+def create_purchase(db: Session, purchase_in: schemas.PurchaseCreate) -> models.Sale:
+    event = get_event(db, purchase_in.evento_id)
+    if not event or event.status != models.EventStatus.ACTIVE:
+        raise ValueError("Evento não encontrado ou inativo")
+
+    batches = (
+        db.query(models.TicketBatch)
+        .filter(
+            models.TicketBatch.event_id == event.id,
+            models.TicketBatch.status == models.BatchStatus.ACTIVE,
+            models.TicketBatch.quantity_available > 0,
+        )
+        .order_by(models.TicketBatch.unit_price.asc(), models.TicketBatch.valid_until.asc())
+        .with_for_update()
+        .all()
+    )
+
+    total_available = sum(batch.quantity_available for batch in batches)
+    if total_available < purchase_in.quantidade:
+        raise ValueError("Estoque insuficiente")
+
+    customer = get_or_create_customer(
+        db,
+        name=purchase_in.nome_comprador,
+        cpf=purchase_in.cpf_comprador,
+        email=purchase_in.email_comprador,
+    )
+
+    sale = models.Sale(
+        customer_id=customer.id,
+        payment_method="PUBLIC",
+        purchase_code=generate_purchase_code(),
+    )
+    db.add(sale)
+    db.flush()
+
+    total_amount = 0.0
+    remaining = purchase_in.quantidade
+
+    for batch in batches:
+        if remaining <= 0:
+            break
+
+        allocate = min(batch.quantity_available, remaining)
+        batch.quantity_available -= allocate
+        if batch.quantity_available <= 0:
+            batch.quantity_available = 0
+            batch.status = models.BatchStatus.CLOSED
+
+        sale_item = models.SaleItem(
+            sale_id=sale.id,
+            ticket_batch_id=batch.id,
+            quantity=allocate,
+            unit_price=batch.unit_price,
+        )
+        db.add(sale_item)
+        total_amount += allocate * batch.unit_price
+        remaining -= allocate
+
+    sale.total_amount = total_amount
+    db.commit()
+    db.refresh(sale)
+    return sale
+
+
 def get_customer_history(db: Session, customer_id: int) -> List[models.Sale]:
     return (
         db.query(models.Sale)
@@ -172,9 +290,11 @@ def create_sale(db: Session, sale_in: schemas.SaleCreate) -> models.Sale:
     if not customer:
         raise ValueError("Cliente não encontrado")
 
-    sale = models.Sale(customer_id=customer.id, payment_method=sale_in.payment_method)
-    total_amount = 0.0
+    sale = models.Sale(customer_id=customer.id, payment_method=sale_in.payment_method, purchase_code=generate_purchase_code())
+    db.add(sale)
+    db.flush()
 
+    total_amount = 0.0
     for item in sale_in.items:
         batch = (
             db.query(models.TicketBatch)
@@ -192,18 +312,16 @@ def create_sale(db: Session, sale_in: schemas.SaleCreate) -> models.Sale:
             batch.quantity_available = 0
             batch.status = models.BatchStatus.CLOSED
 
-        line_total = batch.unit_price * item.quantity
-        total_amount += line_total
-        sale.items.append(
-            models.SaleItem(
-                ticket_batch_id=batch.id,
-                quantity=item.quantity,
-                unit_price=batch.unit_price,
-            )
+        total_amount += batch.unit_price * item.quantity
+        sale_item = models.SaleItem(
+            sale_id=sale.id,
+            ticket_batch_id=batch.id,
+            quantity=item.quantity,
+            unit_price=batch.unit_price,
         )
+        db.add(sale_item)
 
     sale.total_amount = total_amount
-    db.add(sale)
     db.commit()
     db.refresh(sale)
     return sale
@@ -263,6 +381,33 @@ def get_top_events(db: Session, limit: int = 5) -> List[schemas.TopEventOut]:
             name=row.name,
             tickets_sold=int(row.tickets_sold or 0),
             revenue=float(row.revenue or 0.0),
+        )
+        for row in rows
+    ]
+
+
+def get_sales_report(db: Session) -> List[schemas.AdminSaleReportOut]:
+    rows = (
+        db.query(
+            models.Event.id.label("event_id"),
+            models.Event.name,
+            func.sum(models.SaleItem.quantity).label("tickets_sold"),
+            func.sum(models.SaleItem.quantity * models.SaleItem.unit_price).label("revenue"),
+            models.Event.capacity,
+        )
+        .join(models.TicketBatch, models.TicketBatch.event_id == models.Event.id)
+        .join(models.SaleItem, models.SaleItem.ticket_batch_id == models.TicketBatch.id)
+        .group_by(models.Event.id)
+        .order_by(desc("tickets_sold"))
+        .all()
+    )
+    return [
+        schemas.AdminSaleReportOut(
+            event_id=row.event_id,
+            name=row.name,
+            tickets_sold=int(row.tickets_sold or 0),
+            revenue=float(row.revenue or 0.0),
+            capacity=int(row.capacity or 0),
         )
         for row in rows
     ]
