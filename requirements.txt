@@ -1,4 +1,6 @@
 annotated-doc==0.0.4
+psycopg2-binary>=2.9.10
+prometheus-client>=0.22.0
 annotated-types==0.7.0
 anyio==4.14.0
 click==8.4.1
