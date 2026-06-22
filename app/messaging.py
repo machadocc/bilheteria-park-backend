@@ -4,7 +4,15 @@ import logging
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from .config import AWS_REGION, AWS_SNS_TOPIC_ARN, AWS_SQS_QUEUE_URL
+from .config import (
+    AWS_REGION,
+    AWS_SNS_TOPIC_ARN,
+    AWS_SQS_QUEUE_URL,
+    AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_SESSION_TOKEN,
+)
+from .aws_clients import get_sqs_client
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +29,15 @@ class AWSMessageBus(MessageBus):
     def __init__(self):
         self.sqs_url = AWS_SQS_QUEUE_URL
         self.sns_topic_arn = AWS_SNS_TOPIC_ARN
-        self.sqs = boto3.client("sqs", region_name=AWS_REGION)
-        self.sns = boto3.client("sns", region_name=AWS_REGION)
+        self.sqs = get_sqs_client()
+        sns_kwargs = {
+            "region_name": AWS_REGION,
+            "aws_access_key_id": AWS_ACCESS_KEY_ID,
+            "aws_secret_access_key": AWS_SECRET_ACCESS_KEY,
+        }
+        if AWS_SESSION_TOKEN:
+            sns_kwargs["aws_session_token"] = AWS_SESSION_TOKEN
+        self.sns = boto3.client("sns", **sns_kwargs)
 
     def publish_sale_event(self, payload: dict) -> None:
         message = json.dumps(payload, default=str)

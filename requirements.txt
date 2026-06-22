@@ -1,3 +1,4 @@
+boto3
 annotated-doc==0.0.4
 psycopg2-binary>=2.9.10
 prometheus-client>=0.22.0
