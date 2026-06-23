@@ -41,5 +41,8 @@ def verify_token(token: str) -> dict:
 def get_current_admin(request: Request) -> dict:
     admin = getattr(request.state, "admin", None)
     if not admin:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin credentials required")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin credentials required",
+        )
     return admin

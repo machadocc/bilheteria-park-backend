@@ -103,8 +103,7 @@ def worker():
 
         except Exception as e:
             logger.error(f"Erro no worker: {e}")
-            time.sleep(5)
-
+            time.sleep(120)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
