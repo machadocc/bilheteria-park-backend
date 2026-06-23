@@ -1,30 +1,15 @@
 version: '3.8'
 
 services:
-  # API (responde rápido)
   api:
     build: .
     ports:
       - "8000:8000"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     env_file:
       - .env
     environment:
       - DATABASE_URL=postgresql://user:pass@db:5432/ticketing
-      - AWS_SQS_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/083341703320/process-ticket
-      - AWS_REGION=us-east-1
-    depends_on:
-      - db
-
-  # Worker (processa filas)
-  worker:
-    build: .
-    command: python -m app.workers.process_sales
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql://user:pass@db:5432/ticketing
-      - AWS_SQS_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/083341703320/process-ticket
+      - AWS_SQS_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/083341703320/teste
       - AWS_REGION=us-east-1
     depends_on:
       - db
